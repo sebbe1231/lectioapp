@@ -6,5 +6,5 @@ lectioapp is a commandline application that uses an [unofficial lectio API](http
 
 ## Requirements
 ```
-pip install click, lectio.py, cooltables
+pip install click lectio.py cooltables
 ```
