@@ -1,0 +1,2 @@
+# lectioapp
+Lectio command application
