@@ -32,18 +32,46 @@ def schedule_table(sched_item: list) -> None:
     # Status codes
     status = ["Unchanged", "Changed", "cancelled"]
 
+    table = []
+    for i in sched_item:
+        teacher = i.teacher
+
+        # Look for teacher names with initials, and only show the initials
+        # I do this to shorten the table
+        if teacher:
+            t = match(r".*\((.+)\)$", teacher)
+            if t:
+                teacher = t.group(1)
+            else:
+                if len(teacher.split(", ")) > 2:
+                    teacher = ", ".join(teacher.split(", ")[0:2])+", ..."
+        else:
+            # If teacher is none
+            teacher = "?"
+
+        table.append([
+            (str(i.subject) if len(str(i.subject)) <= 18 else f"{str(i.subject)[:18]}..."),
+            (str(i.title) if len(str(i.title)) <= 16 else f"{str(i.title)[:16]}..."),
+            str(i.room)[:5],
+            teacher,
+            str(i.start_time)[:-3],
+            str(i.end_time)[:-3],
+            str(i.end_time-i.start_time),
+            status[int(i.status)]
+        ])
     print(cooltables.create_table([
         ["Fag", "Titel", "Lokale", "Lærer", "Start", "Slut", "Længde", "Status"],
         # No im not gonna line break, cope
-        *[[(str(i.subject) if len(str(i.subject)) <= 18 else f"{str(i.subject)[:18]}..."), (str(i.title) if len(str(i.title)) <= 16 else f"{str(i.title)[:16]}..."),str(i.room)[:5], str(i.teacher), str(i.start_time)[:-3], str(i.end_time)[:-3], str(i.end_time-i.start_time), status[int(i.status)]] for i in sched_item]
+        *table
     ], theme=cooltables.ROUNDED_THEME))
+
 
 @lectioapp.command()
 def now():
     """Get the current ongoing class"""
     print(f"Current time: {str(datetime.now())[:-7]} \n")
     x = lect.me().get_schedule(start_date=datetime.now(),
-                                end_date=datetime.now()+timedelta(seconds=1), strip_time=False)
+                               end_date=datetime.now()+timedelta(seconds=1), strip_time=False)
     if len(x) == 0:
         print("No ongoing modules. Use \"lectioapp next\" to see the next module")
         exit(1)
@@ -51,6 +79,7 @@ def now():
     schedule_table(x)
 
     print(f"Total school hours:\n{x[0].end_time-x[0].start_time}")
+
 
 @lectioapp.command()
 @click.argument('date', required=False)
@@ -81,6 +110,7 @@ def day(date):
 
     print(f"Total school hours:\n{x[-1].end_time-x[0].start_time}")
 
+
 @lectioapp.command()
 def next():
     """Get the next class in line"""
@@ -97,17 +127,10 @@ def next():
             break
 
     status = ["Unchanged", "Changed", "Cancelled"]
-    print(cooltables.create_table([
-        ["Fag", "Titel", "Lokale", "Lærer", "Start", "Slut", "Længde", "Status"],
-        [(str(x[-1].subject) if len(str(x[-1].subject)) <= 18 else f"{str(x[-1].subject)[:18]}..."), 
-         (str(x[-1].title) if len(str(x[-1].title)) <= 16 else f"{str(x[-1].title)[:16]}..."),
-         str(x[-1].room)[:5], str(x[-1].teacher),
-         str(x[-1].start_time)[:-3], str(x[-1].end_time)[:-3], 
-         str(x[-1].end_time-x[-1].start_time),
-         status[int(x[-1].status)]]
-    ], theme=cooltables.ROUNDED_THEME))
+    schedule_table([x[-1]])
 
     print(f"Total school hours:\n{x[-1].end_time-x[-1].start_time}")
+
 
 @lectioapp.command()
 @click.argument('date', required=False)
@@ -116,9 +139,9 @@ def week(date):
     \b
     If no date is specified, the current week will be used
     \b
-    
+
     Costume date in format {year}-{month}-{day}"""
-    
+
     if date:
         try:
             date = datetime.strptime(date, "%Y-%m-%d")
@@ -127,7 +150,7 @@ def week(date):
             exit(1)
     else:
         date = datetime.now()
-    
+
     # Define start and end to make it easier to look at
     start = datetime.now() - timedelta(days=datetime.now().weekday())
     end = start + timedelta(days=6)
@@ -151,6 +174,7 @@ def week(date):
             i = i + (m.end_time - m.start_time)
     print(i)
 
+
 @lectioapp.command()
 @click.argument("user_id", required=False)
 @click.option("-n", "--now", help="Get the current class for the student", is_flag=True)
@@ -172,12 +196,7 @@ def user(user_id: str, now: bool, day: bool, week: bool):
                 print("No user with such id!")
                 exit(1)
 
-    # Not using user_table since the user returned is not a list, but a single user
-    print(cooltables.create_table([
-        ["Navn", "Klasse", "Initialer", "Skole", "Type", "Lectio ID"],
-        [str(u.name), str(u.class_name), str(u.initials), lect.school().name, u.type.get_str(), str(u.id)]
-    ], theme=cooltables.ROUNDED_THEME))
-    print(f"Lectio billede:\n{u.image}\n")
+    user_table([u])
 
     # Set start and end date for if student or teachers schedule is asked for
     if now:
@@ -189,7 +208,7 @@ def user(user_id: str, now: bool, day: bool, week: bool):
     elif week:
         start = datetime.now() - timedelta(days=datetime.now().weekday())
         end = start + timedelta(days=6)
-    else: 
+    else:
         exit(1)
 
     x = u.get_schedule(start_date=start, end_date=end, strip_time=False)
@@ -203,9 +222,9 @@ def user(user_id: str, now: bool, day: bool, week: bool):
             i = m.end_time - m.start_time
         else:
             i = i + (m.end_time - m.start_time)
-    
+
     print(f"Total school hours:\n{i}")
-        
+
 
 @lectioapp.command()
 @click.argument('term')
