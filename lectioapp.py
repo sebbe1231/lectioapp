@@ -2,9 +2,11 @@ from lectio import Lectio, exceptions
 from lectio import UserType
 from datetime import datetime, timedelta
 import click
-import cooltables
+from beautifultable import BeautifulTable
+import os
+from re import match
 
-lect = Lectio("inst_id")
+lect = Lectio(inst_id)
 try:
     lect.authenticate("username", "password", save_creds=True)
     print("Authenticated!")
@@ -12,27 +14,39 @@ except exceptions.IncorrectCredentialsError:
     print("Not authenticated!")
     exit(1)
 
-    
+
 @click.group()
 def lectioapp():
     pass
 
 
-def user_table(user_item: list) -> None:
+def user_table(user_item: list) -> BeautifulTable:
     """Generates a user table based on user list"""
-    print(cooltables.create_table([
-        ["Navn", "Klasse", "Initialer", "Skole", "Type", "Lectio ID"],
-        *[[str(i.name), str(i.class_name), str(i.initials), lect.school().name, i.type.get_str(), str(i.id)] for i in user_item]
-    ], theme=cooltables.ROUNDED_THEME))
+    table = BeautifulTable(maxwidth=os.get_terminal_size()[0])
+    table.columns.header = ["Navn", "Klasse", "Initialer", "Type", "Lectio ID"]
+    table.set_style(BeautifulTable.STYLE_BOX_ROUNDED)
 
+    for i in user_item:
+        table.rows.append([
+            str(i.name),
+            str(i.class_name),
+            str(i.initials),
+            str(i.type.get_str()),
+            str(i.id)
+        ])
+    
+    return table
 
-def schedule_table(sched_item: list) -> None:
+def schedule_table(sched_item: list) -> BeautifulTable:
     """Generates a schedule table based on schedule list"""
 
     # Status codes
     status = ["Unchanged", "Changed", "cancelled"]
 
-    table = []
+    table = BeautifulTable(maxwidth=os.get_terminal_size()[0])
+    table.columns.header = ["Fag", "Titel", "Lokale", "Lærer", "Start", "Slut", "Længde", "Status"]
+    table.set_style(BeautifulTable.STYLE_BOX_ROUNDED)
+
     for i in sched_item:
         teacher = i.teacher
 
@@ -41,7 +55,7 @@ def schedule_table(sched_item: list) -> None:
         if teacher:
             t = match(r".*\((.+)\)$", teacher)
             if t:
-                teacher = t.group(1)
+                teacher = str(t.group(1))
             else:
                 if len(teacher.split(", ")) > 2:
                     teacher = ", ".join(teacher.split(", ")[0:2])+", ..."
@@ -49,7 +63,7 @@ def schedule_table(sched_item: list) -> None:
             # If teacher is none
             teacher = "?"
 
-        table.append([
+        table.rows.append([
             (str(i.subject) if len(str(i.subject)) <= 18 else f"{str(i.subject)[:18]}..."),
             (str(i.title) if len(str(i.title)) <= 16 else f"{str(i.title)[:16]}..."),
             str(i.room)[:5],
@@ -59,10 +73,9 @@ def schedule_table(sched_item: list) -> None:
             str(i.end_time-i.start_time),
             status[int(i.status)]
         ])
-    print(cooltables.create_table([
-        ["Fag", "Titel", "Lokale", "Lærer", "Start", "Slut", "Længde", "Status"],
-        *table
-    ], theme=cooltables.ROUNDED_THEME))
+
+    return table
+
 
 
 @lectioapp.command()
@@ -75,7 +88,7 @@ def now():
         print("No ongoing modules. Use \"lectioapp next\" to see the next module")
         exit(1)
 
-    schedule_table(x)
+    print(schedule_table(x))
 
     print(f"Total school hours:\n{x[0].end_time-x[0].start_time}")
 
@@ -105,7 +118,7 @@ def day(date):
         print(f"No modules on the date {str(date)[:-8]}")
         exit(1)
 
-    schedule_table(x)
+    print(schedule_table(x))
 
     print(f"Total school hours:\n{x[-1].end_time-x[0].start_time}")
 
@@ -160,7 +173,7 @@ def week(date):
         print(f"No modules on the date {str(date)[:-8]}")
         exit(1)
 
-    schedule_table(x)
+    print(schedule_table(x))
 
     # I have to use this way, by adding each module length to eachother
     # Or else the wrong length will be displayed
@@ -194,7 +207,7 @@ def user(user_id: str, now: bool, day: bool, week: bool):
                 print("No user with such id!")
                 exit(1)
 
-    user_table([u])
+    print(user_table([u]))
 
     # Set start and end date for if student or teachers schedule is asked for
     if now:
@@ -211,7 +224,7 @@ def user(user_id: str, now: bool, day: bool, week: bool):
 
     x = u.get_schedule(start_date=start, end_date=end, strip_time=False)
 
-    schedule_table(x)
+    print(schedule_table(x))
 
     # Incase of the week flag, a forloop will get a better result of total hours than simply doing first and last module
     i = 0
@@ -236,16 +249,22 @@ def overview():
             cache[c.subject] = len(list(filter(lambda i: i.subject == c.subject, sched)))
             count = cache.get(c.subject)
 
-    schedule_table(sched)
+    print(schedule_table(sched))
     print(f"Time untill school is over:\n{str(sched[-1].end_time-datetime.now())[:-7]}")
     
     print(f"\nThe distribution of classes for the day:")
-    print(cooltables.create_table([
-        ["Fag", "Moduler", "Procent"],
-        *[[str(subject), 
-           str(times), 
-           f"{times / sum(cache.values()) * 100}%"] for subject, times in cache.items()]
-    ], theme=cooltables.ROUNDED_THEME))
+    
+    table = BeautifulTable(maxwidth=os.get_terminal_size()[0])
+    table.columns.header = ["Fag", "Moduler", "Procent"]
+    table.set_style(BeautifulTable.STYLE_BOX_ROUNDED)
+
+    for subject, times in cache.items():
+        table.rows.append([
+            str(subject),
+            str(times),
+            f"{times / sum(cache.values()) * 100}%"
+        ])
+    print(table)
 
 @lectioapp.command()
 @click.argument('term')
@@ -255,8 +274,6 @@ def search(term, student: bool, teacher: bool):
     """Search for students for teachers"""
     users = []
 
-    lect.school()
-
     if student and not teacher:
         users = lect.school().search_for_students(query=term)
     elif teacher and not student:
@@ -264,7 +281,7 @@ def search(term, student: bool, teacher: bool):
     else:
         users = lect.school().search_for_users(term)
 
-    user_table(users)
+    print(user_table(users))
 
 
 if __name__ == '__main__':
