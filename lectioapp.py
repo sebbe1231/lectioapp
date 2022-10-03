@@ -1,14 +1,13 @@
 from lectio import Lectio, exceptions
-from lectio import UserType
+from lectio import UserType, ModuleStatus
 from datetime import datetime, timedelta
 import click
 from beautifultable import BeautifulTable
 import os
 from re import match
 
-lect = Lectio(<inst_id>)
 try:
-    lect.authenticate("<username>", "<password>", save_creds=True)
+    lect = Lectio(<inst_id>, "<username>", "<password>")
     print("Authenticated!")
 except exceptions.IncorrectCredentialsError:
     print("Not authenticated!")
@@ -18,6 +17,33 @@ except exceptions.IncorrectCredentialsError:
 @click.group()
 def lectioapp():
     pass
+
+
+def room_table(room_item: list) -> BeautifulTable:
+    """Generates a room table based on room list"""
+
+    table = BeautifulTable(maxwidth=os.get_terminal_size()[0])
+    table.columns.header = ["Lokale", "Navn", "ID"]
+    table.set_style(BeautifulTable.STYLE_BOX_ROUNDED)
+
+    # Only works for my school, due to regex looking for how my school formats classes
+    # For it to work for other schools, simply edit the regex
+    for room in room_item:
+        m = match(r"^(.+?) (\(.+)$", room.name)
+
+        try:
+            room_num = m.group(1)
+            room_name = m.group(2)
+        except AttributeError:
+            continue
+
+        table.rows.append([
+            room_num,
+            room_name,
+            str(room.id)
+        ])
+
+    return table
 
 
 def user_table(user_item: list) -> BeautifulTable:
@@ -37,6 +63,7 @@ def user_table(user_item: list) -> BeautifulTable:
 
     return table
 
+
 def schedule_table(sched_item: list) -> BeautifulTable:
     """Generates a schedule table based on schedule list"""
 
@@ -44,7 +71,8 @@ def schedule_table(sched_item: list) -> BeautifulTable:
     status = ["Unchanged", "Changed", "cancelled"]
 
     table = BeautifulTable(maxwidth=os.get_terminal_size()[0])
-    table.columns.header = ["Fag", "Titel", "Lokale", "Lærer", "Start", "Slut", "Længde", "Status"]
+    table.columns.header = ["Fag", "Titel", "Lokale",
+                            "Lærer", "Start", "Slut", "Længde", "Status"]
     table.set_style(BeautifulTable.STYLE_BOX_ROUNDED)
 
     for i in sched_item:
@@ -62,7 +90,7 @@ def schedule_table(sched_item: list) -> BeautifulTable:
         else:
             # If teacher is none
             teacher = "?"
-        
+
         # Adds a row that displays date of module, as to not do it in start and endtime columns
         if not str(i.start_time.date()) in table.rows and len(sched_item) > 1:
             table.rows.append([
@@ -70,18 +98,19 @@ def schedule_table(sched_item: list) -> BeautifulTable:
             ]*8, header=str(i.start_time.date()))
 
         table.rows.append([
-            (str(i.subject) if len(str(i.subject)) <= 18 else f"{str(i.subject)[:18]}..."),
-            (str(i.title) if len(str(i.title)) <= 16 else f"{str(i.title)[:16]}..."),
+            (str(i.subject) if len(str(i.subject))
+             <= 18 else f"{str(i.subject)[:18]}..."),
+            (str(i.title) if len(str(i.title)) <=
+             16 else f"{str(i.title)[:16]}..."),
             str(i.room)[:5],
             teacher,
             f"{str(i.start_time)[11:-3]}",
             f"{str(i.end_time)[11:-3]}",
             str(i.end_time-i.start_time),
-            status[int(i.status)]
+            i.status
         ])
 
     return table
-
 
 
 @lectioapp.command()
@@ -139,7 +168,7 @@ def next():
     if len(sched) == 0:
         print("No modules found in your schedule!")
         return
-    
+
     for i in sched:
         if i.start_time > now:
             print(schedule_table([i]))
@@ -148,8 +177,7 @@ def next():
     else:
         print("No future modules found in your schedule, for the next 5 days!")
         return
-    
-    
+
 
 @lectioapp.command()
 @click.argument('date', required=False)
@@ -171,7 +199,7 @@ def week(date):
         date = datetime.now()
 
     # Define start and end to make it easier to look at
-    start = datetime.now() - timedelta(days=datetime.now().weekday())
+    start = date - timedelta(days=date.weekday())
     end = start + timedelta(days=6)
     # Same as in user -w
     x = lect.me().get_schedule(start_date=start, end_date=end, strip_time=True)
@@ -194,7 +222,6 @@ def week(date):
     print(i)
 
 
-
 @lectioapp.command()
 @click.argument("user_id", required=False)
 @click.option("-n", "--now", help="Get the current class for the student", is_flag=True)
@@ -208,15 +235,14 @@ def user(user_id: str, now: bool, day: bool, week: bool):
     if user_id:
         # If an id is given, check look for related student or teacher id
         try:
-            u = lect.school().get_user_by_id(user_id, UserType.STUDENT)
+            u = lect.get_school().get_user_by_id(user_id)
         except exceptions.UserDoesNotExistError:
-            try:
-                u = lect.school().get_user_by_id(user_id, UserType.TEACHER)
-            except exceptions.UserDoesNotExistError:
-                print("No user with such id!")
-                exit(1)
+            print("No user with such id!")
+            exit(1)
 
     print(user_table([u]))
+
+    print(u.image)
 
     # Set start and end date for if student or teachers schedule is asked for
     if now:
@@ -248,6 +274,7 @@ def user(user_id: str, now: bool, day: bool, week: bool):
 
     print(f"Total school hours:\n{i}")
 
+
 @lectioapp.command()
 def overview():
     """Get an overview of the current day"""
@@ -258,14 +285,16 @@ def overview():
     for c in sched:
         count = cache.get(c.subject)
         if not count:
-            cache[c.subject] = len(list(filter(lambda i: i.subject == c.subject, sched)))
+            cache[c.subject] = len(
+                list(filter(lambda i: i.subject == c.subject, sched)))
             count = cache.get(c.subject)
 
     print(schedule_table(sched))
-    print(f"Time untill school is over:\n{str(sched[-1].end_time-datetime.now())[:-7]}")
-    
+    print(
+        f"Time untill school is over:\n{str(sched[-1].end_time-datetime.now())[:-7]}")
+
     print(f"\nThe distribution of classes for the day:")
-    
+
     table = BeautifulTable(maxwidth=os.get_terminal_size()[0])
     table.columns.header = ["Fag", "Moduler", "Procent"]
     table.set_style(BeautifulTable.STYLE_BOX_ROUNDED)
@@ -278,6 +307,7 @@ def overview():
         ])
     print(table)
 
+
 @lectioapp.command()
 @click.argument('term')
 @click.option("-s", "--student", help="Only search for students", is_flag=True)
@@ -287,14 +317,90 @@ def search(term, student: bool, teacher: bool):
     users = []
 
     if student and not teacher:
-        users = lect.school().search_for_students(query=term)
+        users = lect.get_school().search_for_students(query=term)
     elif teacher and not student:
-        users = lect.school().search_for_teachers(query_name=term, query_initials=term)
+        users = lect.get_school().search_for_teachers(
+            query_name=term, query_initials=term)
     else:
-        users = lect.school().search_for_users(term)
+        users = lect.get_school().search_for_users(term)
 
     print(user_table(users))
 
+
+@lectioapp.command()
+@click.argument('room', required = False)
+def rooms(room: str):
+    """Look at or search for rooms.
+    \b
+    If room arguement is empty, all rooms will be displayed"""
+    if not room:
+        print(room_table(lect.get_school().rooms))
+    else:
+        print(room_table(lect.get_school().search_for_rooms(room)))
+
+@lectioapp.command()
+@click.argument('id')
+@click.argument('time', required=False)
+@click.option("-n", "--now", help="Get current activity in room", is_flag=True)
+@click.option("-d", "--day", help="Get all activities in the room for the day", is_flag=True)
+@click.option("-w", "--week", help="Get all activities in the room for the day", is_flag=True)
+def get_room(id: int, time: str, now: bool, day: bool, week: bool):
+    """Get information about a room.
+    \b
+
+    Get availability of room based on defined time, if no time is defined, it will show for the current time.
+    \b
+    Time must be inserted with format [year]-[month]-[day]-[hour]-[minute]
+    """
+
+    # Check if time is defined
+    if time:
+        try:
+            # I should add custom formatting
+            time = datetime.strptime(time, "%Y-%m-%d-%H-%M")
+        except:
+            print("Not valid time/date")
+            exit(1)
+    else:
+        time = datetime.now()
+    
+    try:
+        room = lect.get_school().get_room_by_id(id)
+        table = room_table([lect.get_school().get_room_by_id(id)])
+        table.columns.insert(
+            -1, 
+            # If room available, add ✓, else add ✘
+            [("✓" if room.is_available(time) == 1 else "✘")], 
+            header="Is available")
+        print(table)
+
+        # If room is not available, show activity during that time
+        if table.columns["Is available"] == "✘":
+            print(f"Activity in room at {time}")
+            print(schedule_table(room.get_schedule(time, time+timedelta(seconds=1), False)), "\n")
+
+    except exceptions.RoomDoesNotExistError:
+        print("This room does not exist!")
+        exit(1)
+
+    # Check if flag is added
+    if now:
+        start = time
+        end = time+timedelta(seconds=1)
+        strip = False
+    elif day:
+        start = time
+        end = time
+        strip = True
+    elif week:
+        start = time - timedelta(days=datetime.now().weekday())
+        end = start + timedelta(days=6)
+        strip = True
+    else:
+        exit(1)
+    
+    # Print schedule for the timeframe defined by the flag
+    print(schedule_table(room.get_schedule(start, end, strip)))
 
 if __name__ == '__main__':
     lectioapp()
