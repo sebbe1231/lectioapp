@@ -6,9 +6,9 @@ from beautifultable import BeautifulTable
 import os
 from re import match
 
-lect = Lectio(inst_id)
+lect = Lectio(<inst_id>)
 try:
-    lect.authenticate("username", "password", save_creds=True)
+    lect.authenticate("<username>", "<password>", save_creds=True)
     print("Authenticated!")
 except exceptions.IncorrectCredentialsError:
     print("Not authenticated!")
@@ -34,7 +34,7 @@ def user_table(user_item: list) -> BeautifulTable:
             str(i.type.get_str()),
             str(i.id)
         ])
-    
+
     return table
 
 def schedule_table(sched_item: list) -> BeautifulTable:
@@ -62,14 +62,20 @@ def schedule_table(sched_item: list) -> BeautifulTable:
         else:
             # If teacher is none
             teacher = "?"
+        
+        # Adds a row that displays date of module, as to not do it in start and endtime columns
+        if not str(i.start_time.date()) in table.rows and len(sched_item) > 1:
+            table.rows.append([
+                "---"
+            ]*8, header=str(i.start_time.date()))
 
         table.rows.append([
             (str(i.subject) if len(str(i.subject)) <= 18 else f"{str(i.subject)[:18]}..."),
             (str(i.title) if len(str(i.title)) <= 16 else f"{str(i.title)[:16]}..."),
             str(i.room)[:5],
             teacher,
-            str(i.start_time)[:-3],
-            str(i.end_time)[:-3],
+            f"{str(i.start_time)[11:-3]}",
+            f"{str(i.end_time)[11:-3]}",
             str(i.end_time-i.start_time),
             status[int(i.status)]
         ])
@@ -136,12 +142,14 @@ def next():
     
     for i in sched:
         if i.start_time > now:
-            schedule_table([i])
+            print(schedule_table([i]))
             print(f"Total school hours:\n{i.end_time-i.start_time}")
             return
     else:
         print("No future modules found in your schedule, for the next 5 days!")
         return
+    
+    
 
 @lectioapp.command()
 @click.argument('date', required=False)
@@ -166,7 +174,7 @@ def week(date):
     start = datetime.now() - timedelta(days=datetime.now().weekday())
     end = start + timedelta(days=6)
     # Same as in user -w
-    x = lect.me().get_schedule(start_date=start, end_date=end, strip_time=False)
+    x = lect.me().get_schedule(start_date=start, end_date=end, strip_time=True)
 
     # Check if there are actually modules in the list
     if len(x) == 0:
@@ -184,6 +192,7 @@ def week(date):
         else:
             i = i + (m.end_time - m.start_time)
     print(i)
+
 
 
 @lectioapp.command()
@@ -213,16 +222,19 @@ def user(user_id: str, now: bool, day: bool, week: bool):
     if now:
         start = datetime.now()
         end = datetime.now()+timedelta(seconds=1)
+        strip = False
     elif day:
-        start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-        end = start+timedelta(days=1)
+        start = datetime.now()
+        end = start
+        strip = True
     elif week:
         start = datetime.now() - timedelta(days=datetime.now().weekday())
         end = start + timedelta(days=6)
+        strip = True
     else:
         exit(1)
 
-    x = u.get_schedule(start_date=start, end_date=end, strip_time=False)
+    x = u.get_schedule(start_date=start, end_date=end, strip_time=strip)
 
     print(schedule_table(x))
 
