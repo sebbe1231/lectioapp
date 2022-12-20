@@ -1,5 +1,4 @@
 from lectio import Lectio, exceptions
-from lectio import UserType, ModuleStatus
 from datetime import datetime, timedelta
 import click
 from beautifultable import BeautifulTable
@@ -18,6 +17,38 @@ except exceptions.IncorrectCredentialsError:
 def lectioapp():
     pass
 
+def absence_table(absence_item: list) -> BeautifulTable:
+    phy_table = BeautifulTable()
+    phy_table.columns.header = ["Class", "Calculated Percent", "Calculated Modules", "Year Percent", "Year Modules"]
+
+    assign_table = BeautifulTable()
+    assign_table.columns.header = ["Class", "Calculated Percent", "Calculated Modules", "Year Percent", "Year Modules"]
+
+    table = BeautifulTable(maxwidth=os.get_terminal_size()[0])
+    table.columns.header = ["Physical", "Assignments"]
+    table.set_style(BeautifulTable.STYLE_BOX_ROUNDED)
+
+    for i in absence_item:
+        absence = i.absence_data
+        phy_table.rows.append([
+            i.subject,
+            absence.physical_calculated_percentage, 
+            f"{absence.physical_calculated_absent}/{absence.physical_calculated_total}",
+            absence.physical_percentage,
+            f"{absence.physical_absent}/{absence.physical_total}"
+        ])
+        
+        assign_table.rows.append([
+            i.subject,
+            absence.assignment_calculated_percentage, 
+            f"{absence.assignment_calculated_absent}/{absence.assignment_calculated_total}",
+            absence.assignment_percentage,
+            f"{absence.assignment_absent}/{absence.assignment_total}"
+        ])
+    
+    table.rows.append([phy_table, assign_table])
+
+    return table
 
 def room_table(room_item: list) -> BeautifulTable:
     """Generates a room table based on room list"""
@@ -55,7 +86,7 @@ def user_table(user_item: list) -> BeautifulTable:
     for i in user_item:
         table.rows.append([
             str(i.name),
-            str(i.class_name),
+            str(i.get_class_name()),
             str(i.initials),
             str(i.type.get_str()),
             str(i.id)
@@ -133,7 +164,6 @@ def now():
 def day(date):
     """Get all the modules of a day, if no date is given the date will be set to today
     \b
-
     Costume date in format {year}-{month}-{day}
     """
 
@@ -186,7 +216,6 @@ def week(date):
     \b
     If no date is specified, the current week will be used
     \b
-
     Costume date in format {year}-{month}-{day}"""
 
     if date:
@@ -242,7 +271,8 @@ def user(user_id: str, now: bool, day: bool, week: bool):
 
     print(user_table([u]))
 
-    print(u.image)
+    print(f"Image: {u.get_image_url()}")
+    print(f"Link: {u.url}")
 
     # Set start and end date for if student or teachers schedule is asked for
     if now:
@@ -347,7 +377,6 @@ def rooms(room: str):
 def get_room(id: int, time: str, now: bool, day: bool, week: bool):
     """Get information about a room.
     \b
-
     Get availability of room based on defined time, if no time is defined, it will show for the current time.
     \b
     Time must be inserted with format [year]-[month]-[day]-[hour]-[minute]
@@ -401,6 +430,10 @@ def get_room(id: int, time: str, now: bool, day: bool, week: bool):
     
     # Print schedule for the timeframe defined by the flag
     print(schedule_table(room.get_schedule(start, end, strip)))
+
+@lectioapp.command()
+def absence():
+    print(absence_table(lect.me().get_absences().subjects))
 
 if __name__ == '__main__':
     lectioapp()
